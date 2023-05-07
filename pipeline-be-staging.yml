@@ -1,0 +1,101 @@
+pipeline {
+    agent any
+    environment {
+        CI_GITLAB_USER='strongpapazola'
+        BRANCH="staging"
+    }
+    stages {
+        stage('Build') {
+            // Add BUILD in parameterize to enable this stage
+            // when {
+            //     expression { env.BUILD.toBoolean() == true }
+            // }
+
+            // Add BASE_IMG in Global Variable like strongpapazola/ubuntu
+            // strongpapazola-github is a credential for github filled with username and password (access token)
+            // strongpapazola-dockerhub is a credential for dockerhub filled with username and password
+            // stag-kayaroll-be-01 is a credential for ssh filled with username and private key
+
+            steps {
+                dir("com.kayaroll.be") {
+                    git branch: "${env.BRANCH}", credentialsId: 'strongpapazola-github', url: 'https://github.com/Sagara-X-Kayaroll/com.kayaroll.be.git'
+                }
+                dir("com.kayaroll.secrets") {
+                    git branch: "${env.BRANCH}", credentialsId: 'strongpapazola-github', url: 'https://github.com/Sagara-X-Kayaroll/com.kayaroll.secrets.git'
+                }
+                sh """
+                    pwd
+                    ls -lah
+                    ls -lah *
+                    cp com.kayaroll.secrets/.env-kayaroll-be com.kayaroll.be/.env
+                """
+                dir("com.kayaroll.be") {
+                    // Build the Docker image
+                    // sh "docker build -t $BASE_IMG:app-kayaroll-be-${env.BRANCH}-${env.BUILD_NUMBER} ."
+                    sh "docker build -t $BASE_IMG:app-kayaroll-be-${env.BRANCH} ."
+                }
+            }
+        }
+        stage('Push') {
+            // Add PUSH in parameterize to enable this stage
+            // when {
+            //     expression { env.PUSH.toBoolean() == true }
+            // }
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'strongpapazola-dockerhub', usernameVariable: 'DOCKERHUB_CREDENTIALS_USR', passwordVariable: 'DOCKERHUB_CREDENTIALS_PSW')]) {
+                    sh 'docker login -u ${DOCKERHUB_CREDENTIALS_USR} -p ${DOCKERHUB_CREDENTIALS_PSW}'
+                    // sh "docker push $BASE_IMG:app-kayaroll-be-${env.BRANCH}-${env.BUILD_NUMBER}"
+                    sh "docker push $BASE_IMG:app-kayaroll-be-${env.BRANCH}"
+                    sh "docker logout"
+                }
+                sh "docker images"
+                // sh "docker rmi $BASE_IMG:app-kayaroll-be-${env.BRANCH}-${env.BUILD_NUMBER}"
+                sh "docker rmi $BASE_IMG:app-kayaroll-be-${env.BRANCH}"
+                sh "docker images"
+            }
+        }
+        stage('Deploy') {
+            // Add DEPLOY in parameterize to enable this stage
+            // when {
+            //     expression { env.DEPLOY.toBoolean() == true }
+            // }
+
+            steps {
+                withCredentials([sshUserPrivateKey(credentialsId: 'stag-kayaroll-be-01', keyFileVariable: 'SSH_KEY_FILE', passphraseVariable: 'SSH_KEY_PASSPHRASE', usernameVariable: 'SSH_USERNAME')]) {
+                    withCredentials([usernamePassword(credentialsId: 'strongpapazola-dockerhub', usernameVariable: 'DOCKERHUB_CREDENTIALS_USR', passwordVariable: 'DOCKERHUB_CREDENTIALS_PSW')]) {
+                        sh """
+                            ssh -i ${SSH_KEY_FILE} \
+                                -o StrictHostKeyChecking=no \
+                                ${SSH_USERNAME}@api.kayaroll.nikici.com \
+                                -p 65022 "docker login -u ${DOCKERHUB_CREDENTIALS_USR} -p ${DOCKERHUB_CREDENTIALS_PSW} \
+                                && docker pull $BASE_IMG:app-kayaroll-be-${env.BRANCH} \
+                                && docker logout \
+                                ; docker rm -f app-kayaroll-be-${env.BRANCH} || true \
+                                ; docker run -d -p 127.0.0.1:4200:4200 --name app-kayaroll-be-${env.BRANCH} ${BASE_IMG}:app-kayaroll-be-${env.BRANCH}
+                                "
+                        """
+                    }
+                }
+            }
+        }
+        stage('Notif') {
+            // Add NOTIF in parameterize to enable this stage
+            // when {
+            //     expression { env.NOTIF.toBoolean() == true }
+            // }
+
+            // Add NOTIF_URL in Global Variable
+            // Add NOTIF_GROUP in Global Variable
+            // $JOB_NAME is a Jenkins variable default
+
+            steps {
+                sh """
+                    curl --location "$NOTIF_URL" \
+                    --header 'Content-Type: application/x-www-form-urlencoded' \
+                    --data-urlencode "name=$NOTIF_GROUP" \
+                    --data-urlencode "message=Pipeline job for $JOB_NAME has been successfully deployed."
+                """
+            }
+        }
+    }
+}
