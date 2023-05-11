@@ -1,0 +1,11 @@
+version: '3.3'
+services:
+    tinyfilemanager:
+        volumes:
+            - '/opt/tinyfilemanager/data:/var/www/html/data'
+            - '/opt/tinyfilemanager/index.php:/var/www/html/index.php'
+        ports:
+            - '5000:80'
+        restart: always
+        container_name: tinyfilemanager
+        image: 'tinyfilemanager/tinyfilemanager:master'
