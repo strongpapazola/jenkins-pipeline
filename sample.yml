@@ -1,0 +1,20 @@
+pipeline {
+    agent any
+    stages {
+        stage('Deploy') {
+            steps {
+                withCredentials([sshUserPrivateKey(credentialsId: 'login-server', keyFileVariable: 'SSH_KEY_FILE', passphraseVariable: 'SSH_KEY_PASSPHRASE', usernameVariable: 'SSH_USERNAME')]) {
+                    sh """
+                        echo ${SSH_KEY_FILE}
+                        ssh -i ${SSH_KEY_FILE} -o StrictHostKeyChecking=no root@178.128.111.212
+                            "rm -rf belajar-deploy-dengan-jenkins \
+                            && git clone https://gitlab.com/muhammadbintangcahyaputra/belajar-deploy-dengan-jenkins.git \
+                            && rm -rf /var/www/html/bintang/ \
+                            && mkdir -p /var/www/html/bintang/ \
+                            && mv belajar-deploy-dengan-jenkins/website_bintang/* /var/www/html/bintang/"
+                    """
+                }
+            }
+        }
+    }
+}
